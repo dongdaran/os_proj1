@@ -1,0 +1,6 @@
+_workspace/
+readme/
+*.o
+*.a
+/src/examples/additional
+

@@ -86,6 +86,19 @@ halt (void)
   NOT_REACHED ();
 }
 
+// 3-5 : 기존 인자 전달 매크로를 재사용하여 커널 계산 결과를 반환한다.
+int
+fibonacci (int n)
+{
+  return syscall1 (SYS_FIBONACCI, n);
+}
+
+int
+max_of_four_int (int a, int b, int c, int d)
+{
+  return syscall4 (SYS_MAX_OF_FOUR_INT, a, b, c, d);
+}
+
 void
 exit (int status)
 {

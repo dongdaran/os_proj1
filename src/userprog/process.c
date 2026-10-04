@@ -21,7 +21,7 @@
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load (int argc, char **argv, void (**eip) (void), void **esp);
 
 struct child_status
   {
@@ -64,6 +64,9 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char name[sizeof thread_current ()->name];
+  char *first;
+  size_t length;
   struct child_status *status;
   struct start_info *info;
   tid_t tid;
@@ -78,6 +81,20 @@ process_execute (const char *file_name)
       palloc_free_page (fn_copy);
       return TID_ERROR;
     }
+
+  // 3-2 : 앞 공백을 건너뛰고 실행 파일명이 없는 명령은 거부한다.
+  first = fn_copy;
+  while (*first == ' ')
+    first++;
+  if (*first == '\0')
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
+  // 3-2 : 표시 이름만 15글자로 제한하고 자식 스레드에 넘길 cmd line 전체는 fn_copy에 보존한다.
+  for (length = 0; first[length] != '\0' && first[length] != ' ' && length < sizeof name - 1; length++)
+    name[length] = first[length];
+  name[length] = '\0';
 
   status = malloc (sizeof *status);
   info = malloc (sizeof *info);
@@ -98,9 +115,10 @@ process_execute (const char *file_name)
   lock_init (&status->refs_lock);
   info->cmdline = fn_copy;
   info->status = status;
-
+  
+  // 3-2 : 새로운 자식 스레드 생성 및 실행(name : cmd 이름 / info : cmdline, status:정보)
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, info);
+  tid = thread_create (name, PRI_DEFAULT, start_process, info);
   if (tid == TID_ERROR)
     {
       free (info);
@@ -130,7 +148,10 @@ start_process (void *aux)
   char *file_name = info->cmdline;
   struct child_status *status = info->status;
   struct intr_frame if_;
-  bool success;
+  bool success = false;
+  int argc = 0, i;
+  char *p, *save_ptr;
+  char **argv;
 
   thread_current ()->own_status = status;
   free (info);
@@ -140,9 +161,28 @@ start_process (void *aux)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  // 3-2 : 단어의 시작만 세어 연속 공백을 제외한 argc를 구한다.
+  // 3-2 : 현재 공백이 아니고 이전 문자가 공백이거나 문자열의 시작이면 단어의 시작으로 간주하여 argc를 증가시킨다.
+  for (p = file_name; *p != '\0'; p++)
+    if (*p != ' ' && (p == file_name || p[-1] == ' ')) argc++;
+
+  // 3-2 : argv 배열 동적 할당.
+  argv = malloc (argc * sizeof *argv);
+  if (argv != NULL && argc > 0)
+    {
+      // 3-2 : strtok_r로 문자열을 분리하여 argv 배열에 커널 주소를 저장하고 load를 통해 해당 문자열을 사용자 스택으로 복사.
+      p = strtok_r (file_name, " ", &save_ptr);
+      for (i = 0; i < argc; i++)
+        {
+          argv[i] = p;
+          p = strtok_r (NULL, " ", &save_ptr);
+        }
+      success = load (argc, argv, &if_.eip, &if_.esp);
+    }
 
   /* If load failed, quit. */
+  // 3-2 : 할당 또는 로드 실패도 임시 자원을 정리한 뒤 부모에게 결과를 알린다.
+  free (argv);
   palloc_free_page (file_name);
   status->load_ok = success;
   sema_up (&status->load_done);
@@ -217,6 +257,22 @@ process_exit (void)
                     struct child_status, elem);
       child_status_release (status);
     }
+
+  lock_acquire (&filesys_lock);
+  while (!list_empty (&cur->file_descriptors))
+    {
+      struct file_descriptor *entry =
+        list_entry (list_pop_front (&cur->file_descriptors),
+                    struct file_descriptor, elem);
+      file_close (entry->file);
+      free (entry);
+    }
+  if (cur->executable != NULL)
+    {
+      file_close (cur->executable);
+      cur->executable = NULL;
+    }
+  lock_release (&filesys_lock);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -323,19 +379,21 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, int argc, char **argv);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
-/* Loads an ELF executable from FILE_NAME into the current thread.
+/* Loads the ELF executable named by ARGV[0] into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+static bool
+load (int argc, char **argv, void (**eip) (void), void **esp)
 {
+  // 3-2 : 스레드 표시 이름이 아닌 잘리지 않은 첫 번째 인자로 실행 파일을 연다.
+  const char *file_name = argv[0];
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -350,12 +408,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  lock_acquire (&filesys_lock);
   file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
+      lock_release (&filesys_lock);
       goto done; 
     }
+  file_deny_write (file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -430,7 +491,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  // 3-2 : ELF 적재뿐 아니라 인자 스택 구성까지 성공해야 로드 성공이다.
+  if (!setup_stack (esp, argc, argv))
     goto done;
 
   /* Start address. */
@@ -439,8 +501,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* Keep a successfully loaded executable open and deny writes until exit. */
+  if (file != NULL)
+    {
+      if (success)
+        t->executable = file;
+      else
+        file_close (file);
+      lock_release (&filesys_lock);
+    }
   return success;
 }
 
@@ -552,24 +621,62 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
+/* Build the 32-bit C entry stack in one zeroed user page. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, int argc, char **argv)
 {
   uint8_t *kpage;
-  bool success = false;
+  char *sp = PHYS_BASE;
+  char **user_argv;
+  size_t strings = 0, padding;
+  int i;
+
+  // 3-2 : 문자열, 정렬, argv와 NULL, 진입 프레임 12바이트가 한 페이지에 들어야 한다.
+  for (i = 0; i < argc; i++)
+    strings += strlen (argv[i]) + 1;
+  padding = ROUND_UP (strings, 4) - strings;
+  if (strings + padding + (argc + 1) * sizeof (char *) + 12 > PGSIZE)
+    return false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
+  if (kpage == NULL)
+    return false;
+  // 3-2 : 매핑하지 못한 페이지는 여기서 해제하고, 매핑된 페이지는 process_exit이 정리한다.
+  if (!install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true))
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
+      palloc_free_page (kpage);
+      return false;
     }
-  return success;
+
+  // 3-2 : 문자열을 높은 주소부터 역순 복사하고 argv를 실제 사용자 주소로 갱신한다.
+  for (i = argc - 1; i >= 0; i--)
+    {
+      size_t length = strlen (argv[i]) + 1;
+      sp -= length;
+      memcpy (sp, argv[i], length);
+      argv[i] = sp;
+    }
+  // 3-2 : PAL_ZERO의 0 패딩으로 4바이트 정렬한 뒤 argv[argc]의 NULL을 넣는다.
+  sp -= padding;
+  sp -= sizeof (char *);
+  *(char **) sp = NULL;
+  // 3-2 : 주소를 역순으로 넣어 낮은 주소부터 argv[0], argv[1], ... 순서가 되게 한다.
+  for (i = argc - 1; i >= 0; i--)
+    {
+      sp -= sizeof (char *);
+      *(char **) sp = argv[i];
+    }
+  
+  // 3-2 : argv 주소, argc, 가짜 반환 주소 순으로 넣어 _start의 호출 규약을 맞춘다.(pg. 39)
+  user_argv = (char **) sp; // 배열의 첫 원소 위치
+  sp -= sizeof user_argv; // user stack에 argv 배열의 시작 주소를 저장하기 위해 공간 확보
+  *(char ***) sp = user_argv; // user stack의 argv 배열의 시작 주소 저장
+  sp -= sizeof argc; // argc를 스택에 저장하기 위해 공간 확보
+  *(int *) sp = argc; // argc를 스택에 저장
+  sp -= sizeof (void *); // 가짜 반환 주소를 스택에 저장하기 위해 공간 확보
+  *(void **) sp = NULL; // 가짜 반환 주소 저장
+  *esp = sp; // 최종 사용자 스택 포인터 갱신
+  return true;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

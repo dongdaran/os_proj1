@@ -4,22 +4,22 @@
 
 ## 변경한 코드
 
-링크는 현재 작업 폴더의 파일과 해당 줄을 가리킨다.
+링크는 이 문서 기준의 상대 경로와 줄 번호 앵커(#L)를 사용한다.
 
 | 파일(+URL) | line | 구현한 내용 |
 | --- | --- | --- |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:26) | 26, 39 | `child_status`와 `start_info` 정의. PID·로드 결과·종료 코드·대기 여부·세마포어·참조 수를 자식별로 별도 할당 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:47) | 47 | `child_status_release()`: 락으로 refs 감소를 보호하고, 부모와 자식 모두 사용을 끝냈을 때 해제 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:64) | 64 | `process_execute()`: 공유 상태 초기화, 자식 생성, 부모 목록 등록, 로드 완료 대기. 할당·생성·로드 실패 시 메모리 정리. 한 페이지 이상 길이의 문자열 거부 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:127) | 127 | `start_process()`: 전달받은 상태를 `own_status`에 연결하고 load 결과를 기록한 뒤 부모에게 신호 전달. 실패 때도 통지 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:171) | 171 | `process_wait()`: 자기 자식 검색, 중복 대기 거부, 종료 신호 대기, 종료 코드 반환, 목록 제거와 부모 참조 해제 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:196) | 196 | `process_set_exit_status()`: syscall.c에서 구조체 내부를 알 필요 없이 종료 코드를 저장 |
-| [process.c](/home/dongdaran/pintos/src/userprog/process.c:205) | 205 | `process_exit()`: 로드된 사용자 프로세스의 종료 메시지 출력, 자기 자식들에 대한 부모 참조 해제, 기존 페이지 디렉터리 정리 후 자기 종료 통지와 자식 참조 해제 |
-| [process.h](/home/dongdaran/pintos/src/userprog/process.h:9) | 9 | `process_set_exit_status()` 선언. 구조체 정의는 process.c에 유지 |
-| [thread.h](/home/dongdaran/pintos/src/threads/thread.h:82) | 82, 101–102 | 전방 선언과 `child_statuses`, `own_status` 추가. 실제 필드는 `#ifdef USERPROG` 안에 둠 |
-| [thread.c](/home/dongdaran/pintos/src/threads/thread.c:467) | 467–470 | `init_thread()`에서 자식 목록과 자기 상태 포인터 초기화 |
-| [syscall.c](/home/dongdaran/pintos/src/userprog/syscall.c:14) | 14, 28 | 사용자 주소를 바이트별로 검증하여 시스템 콜 번호·인자 읽기. NULL·커널 주소·미매핑 주소를 거부하고 -1 종료. 페이지 경계를 넘는 정수도 검사 |
-| [syscall.c](/home/dongdaran/pintos/src/userprog/syscall.c:49) | 49 | `SYS_EXIT`, `SYS_WAIT`, `SYS_EXEC` 분기와 반환값 전달. exec 문자열은 최대 한 페이지까지 NUL을 확인한 뒤 커널 메모리로 복사. 지원하지 않는 시스템 콜은 -1 종료 |
+| [process.c](../src/userprog/process.c#L26) | 26, 39 | `child_status`와 `start_info` 정의. PID·로드 결과·종료 코드·대기 여부·세마포어·참조 수를 자식별로 별도 할당 |
+| [process.c](../src/userprog/process.c#L47) | 47 | `child_status_release()`: 락으로 refs 감소를 보호하고, 부모와 자식 모두 사용을 끝냈을 때 해제 |
+| [process.c](../src/userprog/process.c#L64) | 64 | `process_execute()`: 공유 상태 초기화, 자식 생성, 부모 목록 등록, 로드 완료 대기. 할당·생성·로드 실패 시 메모리 정리. 한 페이지 이상 길이의 문자열 거부 |
+| [process.c](../src/userprog/process.c#L127) | 127 | `start_process()`: 전달받은 상태를 `own_status`에 연결하고 load 결과를 기록한 뒤 부모에게 신호 전달. 실패 때도 통지 |
+| [process.c](../src/userprog/process.c#L171) | 171 | `process_wait()`: 자기 자식 검색, 중복 대기 거부, 종료 신호 대기, 종료 코드 반환, 목록 제거와 부모 참조 해제 |
+| [process.c](../src/userprog/process.c#L196) | 196 | `process_set_exit_status()`: syscall.c에서 구조체 내부를 알 필요 없이 종료 코드를 저장 |
+| [process.c](../src/userprog/process.c#L205) | 205 | `process_exit()`: 로드된 사용자 프로세스의 종료 메시지 출력, 자기 자식들에 대한 부모 참조 해제, 기존 페이지 디렉터리 정리 후 자기 종료 통지와 자식 참조 해제 |
+| [process.h](../src/userprog/process.h#L9) | 9 | `process_set_exit_status()` 선언. 구조체 정의는 process.c에 유지 |
+| [thread.h](../src/threads/thread.h#L82) | 82, 101–102 | 전방 선언과 `child_statuses`, `own_status` 추가. 실제 필드는 `#ifdef USERPROG` 안에 둠 |
+| [thread.c](../src/threads/thread.c#L467) | 467–470 | `init_thread()`에서 자식 목록과 자기 상태 포인터 초기화 |
+| [syscall.c](../src/userprog/syscall.c#L14) | 14, 28 | 사용자 주소를 바이트별로 검증하여 시스템 콜 번호·인자 읽기. NULL·커널 주소·미매핑 주소를 거부하고 -1 종료. 페이지 경계를 넘는 정수도 검사 |
+| [syscall.c](../src/userprog/syscall.c#L49) | 49 | `SYS_EXIT`, `SYS_WAIT`, `SYS_EXEC` 분기와 반환값 전달. exec 문자열은 최대 한 페이지까지 NUL을 확인한 뒤 커널 메모리로 복사. 지원하지 않는 시스템 콜은 -1 종료 |
 
 기존 `thread_exit()` → `process_exit()` 연결을 사용했다. `exception.c`는 수정하지 않았다. 사용자 예외 종료는 기존 `thread_exit()` 경로를 통해 초기 종료 코드 -1을 전달한다.
 
