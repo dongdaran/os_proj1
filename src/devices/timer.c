@@ -1,6 +1,7 @@
 #include "devices/timer.h"
 #include <debug.h>
 #include <inttypes.h>
+#include <list.h>
 #include <round.h>
 #include <stdio.h>
 #include "devices/pit.h"
@@ -20,6 +21,9 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+/* Threads waiting for a timer deadline, ordered by wakeup_tick. */
+static struct list sleep_list;
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -35,6 +39,7 @@ static void real_time_delay (int64_t num, int32_t denom);
 void
 timer_init (void) 
 {
+  list_init (&sleep_list);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -89,11 +94,33 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  struct thread *cur;
+  struct list_elem *e;
+  enum intr_level old_level;
+  int64_t wakeup_tick;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  if (ticks <= 0)
+    return;
+
+  /* Keep deadline insertion and blocking atomic with respect to timer IRQs. */
+  old_level = intr_disable ();
+  cur = thread_current ();
+  wakeup_tick = timer_ticks () + ticks;
+  cur->wakeup_tick = wakeup_tick;
+
+  /* Insert after existing threads with the same deadline (FIFO for ties). */
+  for (e = list_begin (&sleep_list); e != list_end (&sleep_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, elem);
+      if (wakeup_tick < t->wakeup_tick)
+        break;
+    }
+  list_insert (e, &cur->elem);
+
+  thread_block ();
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -170,8 +197,22 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  struct list_elem *e;
+
   ticks++;
   thread_tick ();
+
+  /* Wake all threads whose deadlines have arrived. */
+  while (!list_empty (&sleep_list))
+    {
+      struct thread *t = list_entry (list_front (&sleep_list),
+                                     struct thread, elem);
+      if (t->wakeup_tick > ticks)
+        break;
+
+      e = list_pop_front (&sleep_list);
+      thread_unblock (list_entry (e, struct thread, elem));
+    }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
