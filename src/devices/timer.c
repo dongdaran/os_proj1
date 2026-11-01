@@ -213,6 +213,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
       e = list_pop_front (&sleep_list);
       thread_unblock (list_entry (e, struct thread, elem));
     }
+
+  /* Switch to a higher-priority thread after all due sleepers are ready. */
+  thread_preempt_if_necessary ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

@@ -106,6 +106,11 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int base_priority;                  /* Priority before lock donation. */
+    struct lock *waiting_lock;          /* Lock this thread is waiting for. */
+    struct list held_locks;              /* Locks held by this thread. */
+    int nice;                           /* MLFQS nice value. */
+    int32_t recent_cpu;                 /* MLFQS recent CPU, 17.14 fixed point. */
     int64_t wakeup_tick;                /* Tick at which this thread should wake. */
     struct list_elem allelem;           /* List element for all threads list. */
 
@@ -142,6 +147,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+void thread_preempt_if_necessary (void);
+void thread_refresh_priority (struct thread *);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
